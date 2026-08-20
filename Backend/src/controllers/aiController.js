@@ -7,7 +7,10 @@ const handleChat = async (req, res) => {
     try {
         const { message, history = [] } = req.body;
 
-        // Check environment configuration
+        // ==========================================
+        // 1. ENVIRONMENT CONFIGURATION
+        // ==========================================
+
         console.log(
             "AI_API_KEY loaded:",
             !!process.env.AI_API_KEY
@@ -15,18 +18,24 @@ const handleChat = async (req, res) => {
 
         console.log(
             "AI_MODEL:",
-            process.env.AI_MODEL || "gemini-3.6-flash"
+            process.env.AI_MODEL || "gemini-2.5-flash"
         );
 
-        // Validate message
-        if (!message) {
+        // ==========================================
+        // 2. VALIDATE MESSAGE
+        // ==========================================
+
+        if (!message || !message.trim()) {
             return res.status(400).json({
                 success: false,
                 message: "Message is required."
             });
         }
 
-        // Validate API key
+        // ==========================================
+        // 3. CHECK API KEY
+        // ==========================================
+
         if (!process.env.AI_API_KEY) {
             return res.status(500).json({
                 success: false,
@@ -35,100 +44,291 @@ const handleChat = async (req, res) => {
             });
         }
 
-        // Initialize Gemini
+        // ==========================================
+        // 4. INITIALIZE GEMINI
+        // ==========================================
+
         const ai = new GoogleGenAI({
             apiKey: process.env.AI_API_KEY
         });
 
-        // Gemini model
         const model =
-            process.env.AI_MODEL || "gemini-3.6-flash";
+            process.env.AI_MODEL || "gemini-2.5-flash";
 
-        // Fetch satellites
-        const satellites = await Satellite.find().lean();
+        // ==========================================
+        // 5. FETCH SATELLITES
+        // ==========================================
 
-        // Fetch recent alerts
-        const alerts = await Alert.find()
-            .sort({ createdAt: -1 })
-            .limit(20)
+        const satellites = await Satellite
+            .find()
             .lean();
 
-        // Find critical satellites
-        const criticalSatellites =
-            satellites
-                .filter(s => s.status === "critical")
-                .map(s => s.name)
-                .join(", ") || "None";
+        // ==========================================
+        // 6. FETCH RECENT ALERTS
+        // ==========================================
+        // IMPORTANT:
+        // Alert schema currently does NOT contain
+        // a "resolved" field, so don't filter by it.
 
-        // Find warning satellites
-        const warningSatellites =
-            satellites
-                .filter(s => s.status === "warning")
-                .map(s => s.name)
-                .join(", ") || "None";
+        const alerts = await Alert
+            .find()
+            .sort({
+                createdAt: -1
+            })
+            .limit(100)
+            .lean();
 
-        // Format alerts
-        const activeAlerts =
+        // ==========================================
+        // 7. IDENTIFY CRITICAL SATELLITES
+        // ==========================================
+
+        const criticalSatelliteIds = new Set(
             alerts
-                .map(alert => {
-                    const satellite = satellites.find(
-                        s =>
-                            s._id.toString() ===
-                            alert.satelliteId?.toString()
+                .filter(
+                    alert =>
+                        alert.severity === "critical"
+                )
+                .map(
+                    alert =>
+                        alert.satelliteId?.toString()
+                )
+        );
+
+        const criticalSatellites = satellites
+            .filter(satellite => {
+                const hasCriticalStatus =
+                    satellite.status === "critical";
+
+                const hasCriticalAlert =
+                    criticalSatelliteIds.has(
+                        satellite._id.toString()
                     );
 
+                return (
+                    hasCriticalStatus ||
+                    hasCriticalAlert
+                );
+            })
+            .map(
+                satellite =>
+                    satellite.name
+            );
+
+        // ==========================================
+        // 8. IDENTIFY WARNING SATELLITES
+        // ==========================================
+
+        const warningSatelliteIds = new Set(
+            alerts
+                .filter(
+                    alert =>
+                        alert.severity === "warning"
+                )
+                .map(
+                    alert =>
+                        alert.satelliteId?.toString()
+                )
+        );
+
+        const warningSatellites = satellites
+            .filter(satellite => {
+
+                // Critical satellites should never
+                // also be counted as warning.
+                if (
+                    satellite.status === "critical" ||
+                    criticalSatelliteIds.has(
+                        satellite._id.toString()
+                    )
+                ) {
+                    return false;
+                }
+
+                const hasWarningStatus =
+                    satellite.status === "warning";
+
+                const hasWarningAlert =
+                    warningSatelliteIds.has(
+                        satellite._id.toString()
+                    );
+
+                return (
+                    hasWarningStatus ||
+                    hasWarningAlert
+                );
+            })
+            .map(
+                satellite =>
+                    satellite.name
+            );
+
+        // ==========================================
+        // 9. CALCULATE FLEET STATUS
+        // ==========================================
+
+        const criticalCount =
+            criticalSatellites.length;
+
+        const warningCount =
+            warningSatellites.length;
+
+        const healthyCount = Math.max(
+            0,
+            satellites.length -
+            criticalCount -
+            warningCount
+        );
+
+        // ==========================================
+        // 10. FORMAT ALERTS
+        // ==========================================
+
+        const formattedAlerts =
+            alerts
+                .map(alert => {
+
+                    const satellite =
+                        satellites.find(
+                            satellite =>
+                                satellite._id
+                                    .toString() ===
+                                alert.satelliteId
+                                    ?.toString()
+                        );
+
                     return `- ${
-                        alert.severity?.toUpperCase() || "UNKNOWN"
-                    } on ${
+                        alert.severity
+                            ?.toUpperCase() ||
+                        "UNKNOWN"
+                    } | ${
                         satellite?.name ||
-                        alert.satelliteId ||
-                        "Unknown satellite"
-                    }: ${
-                        alert.message || "No message"
+                        "Unknown Satellite"
+                    } | ${
+                        alert.type ||
+                        "unknown"
+                    } | ${
+                        alert.message ||
+                        "No message"
+                    } | Value: ${
+                        alert.value ??
+                        "N/A"
                     }`;
                 })
-                .join("\n") || "No active alerts";
+                .join("\n") ||
+            "No alerts recorded.";
 
-        // Mission context
+        // ==========================================
+        // 11. BUILD MISSION CONTEXT
+        // ==========================================
+
         const contextSummary = `
-MISSION CONTROL CONTEXT
+MISSION CONTROL DATA
 
+FLEET SUMMARY
 Total Satellites: ${satellites.length}
+Healthy Satellites: ${healthyCount}
+Warning Satellites: ${warningCount}
+Critical Satellites: ${criticalCount}
 
-Critical Satellites:
-${criticalSatellites}
+CRITICAL SATELLITES
+${
+    criticalSatellites.length > 0
+        ? criticalSatellites.join(", ")
+        : "None"
+}
 
-Warning Satellites:
-${warningSatellites}
+WARNING SATELLITES
+${
+    warningSatellites.length > 0
+        ? warningSatellites.join(", ")
+        : "None"
+}
 
-Recent Alerts:
-${activeAlerts}
+RECENT ALERTS
+${formattedAlerts}
 `;
 
-        // AI system instruction
-        const systemInstruction = `
-You are MISSION AI, an expert satellite mission-control assistant.
+        // ==========================================
+        // 12. AI SYSTEM INSTRUCTION
+        // ==========================================
 
-Use the following mission data to answer the user's questions:
+        const systemInstruction = `
+You are MISSION AI, an expert satellite
+mission-control assistant.
+
+Your job is to analyze the provided
+Mission Control data and answer the
+operator's questions accurately.
+
+CURRENT MISSION DATA:
 
 ${contextSummary}
 
-Rules:
-- Be concise and professional.
-- Focus on satellite operations.
-- Do not invent satellite data.
-- If information is unavailable, clearly say so.
-- Use bullet points when useful.
+IMPORTANT RULES:
+
+1. Use the provided mission data as the
+   primary source of truth.
+
+2. Never invent satellite names,
+   telemetry values, alerts, or statuses.
+
+3. A satellite with a CRITICAL alert must
+   be treated as requiring immediate
+   attention, even if its Satellite.status
+   field still says "healthy".
+
+4. A satellite with a WARNING alert must
+   be treated as a warning condition,
+   unless it also has a critical condition.
+
+5. When calculating mission health, use
+   the calculated fleet summary above.
+
+6. If there are critical satellites,
+   do NOT say that the entire fleet is
+   healthy.
+
+7. If there are no critical alerts,
+   clearly state that there are no active
+   critical alerts.
+
+8. If the user asks for satellites needing
+   immediate attention, list the critical
+   satellites first.
+
+9. If the user asks about alerts, mention
+   the alert severity, satellite, type,
+   message and value when available.
+
+10. Keep responses concise, professional,
+    and suitable for a satellite mission
+    control operator.
+
+11. Use bullet points when listing multiple
+    satellites or alerts.
+
+12. If the requested information is not
+    available in the mission data, say so
+    instead of guessing.
 `;
 
-        // Prepare chat history
+        // ==========================================
+        // 13. PREPARE CHAT HISTORY
+        // ==========================================
+
         const formattedHistory = history
-            .filter(msg => msg?.content)
+            .filter(
+                msg =>
+                    msg &&
+                    msg.content &&
+                    msg.content.trim()
+            )
             .map(msg => ({
                 role:
                     msg.role === "user"
                         ? "user"
                         : "model",
+
                 parts: [
                     {
                         text: msg.content
@@ -136,29 +336,40 @@ Rules:
                 ]
             }));
 
-        // Add current user message
+        // ==========================================
+        // 14. ADD CURRENT USER MESSAGE
+        // ==========================================
+
         formattedHistory.push({
             role: "user",
             parts: [
                 {
-                    text: message
+                    text: message.trim()
                 }
             ]
         });
+
+        // ==========================================
+        // 15. SEND REQUEST TO GEMINI
+        // ==========================================
 
         console.log(
             "Sending request to Gemini..."
         );
 
-        // Gemini request
         const response =
             await ai.models.generateContent({
                 model,
                 contents: formattedHistory,
                 config: {
-                    systemInstruction
+                    systemInstruction,
+                    temperature: 0.3
                 }
             });
+
+        // ==========================================
+        // 16. RETURN RESPONSE
+        // ==========================================
 
         console.log(
             "Gemini response received."
@@ -170,6 +381,10 @@ Rules:
         });
 
     } catch (error) {
+
+        // ==========================================
+        // ERROR HANDLING
+        // ==========================================
 
         console.error(
             "========== AI CHAT ERROR =========="
