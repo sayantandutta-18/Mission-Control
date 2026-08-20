@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root, .dark {
+  --background: #0B0E14;
+  --foreground: #F8FAFC;
+  --surface: #151A24;
+  
+  --card: #151A24;
+  --card-foreground: #F8FAFC;
+  
+  --popover: #151A24;
+  --popover-foreground: #F8FAFC;
+  
+  --primary: #00E5FF;
+  --primary-foreground: #020617;
+  
+  --secondary: #1E293B;
+  --secondary-foreground: #F8FAFC;
+  
+  --muted: #1E293B;
+  --muted-foreground: #94A3B8;
+  
+  --accent: #1E293B;
+  --accent-foreground: #F8FAFC;
+  
+  --destructive: #FF1744;
+  --destructive-foreground: #F8FAFC;
+
+  --success: #00E676;
+  --warning: #FFC400;
+  
+  --border: #334155;
+  --input: #334155;
+  --ring: #00E5FF;
+  
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased overflow-hidden;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-tight;
+  }
+  .tech-text {
+    @apply font-mono text-sm tracking-wider;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3441;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b495b;
+}
+
+.glass-panel {
+  @apply bg-surface/80 backdrop-blur-md border border-white/5 shadow-xl;
+}
